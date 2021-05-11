@@ -1,0 +1,1517 @@
+---
+title: "Dermatitis Code Deposit"
+author: "Poro"
+date: "5/10/2021"
+output: html_document
+---
+
+# Set up working directory and load libraries
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/')
+
+library(ggplot2)
+library(tcR)
+library(reshape2)
+library(data.table)
+library(ggpubr)
+library(dplyr)
+library(ggsci)
+library(ggrepel)
+library(ggpubr)
+library(tidyverse)
+library(circlize)
+library(MASS)
+```
+
+# FIG 1F
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n <- read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] <- 'Sample'
+annot <- read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+sum.stat <- read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/sum.stat.include.csv')[,-2]
+annotate <- inner_join(annot, sum.stat) ## merge with summary statistics (library size)
+all <- left_join(all.tcr.n.cli.n, annot)
+
+## tcr info
+# change name
+tcr.ls <- readRDS('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/tcr-list.rds')
+match.names <- inner_join(data.frame(Sample = names(tcr.ls)),annot)
+identical(names(tcr.ls), match.names$Sample)
+names(tcr.ls) <- match.names$Name
+
+
+overlap.m <- repOverlap(tcr.ls, 'morisita', 'read.count','aa', .norm = T, .verbose = F) # calculate morisita index
+mo <- melt(overlap.m)
+colnames(mo)[1] <- "Name"
+mo <- mo %>% left_join(annotate)
+mo$newname <- mo$Name
+mo$newname[mo$newname == 'T_P'] <- expression('T'['P']) %>% as.character()
+mo$newname[mo$newname == 'T_M1'] <- expression('T'['M1']) %>% as.character()
+mo$newname[mo$newname == 'T_M2'] <- expression('T'['M2']) %>% as.character()
+mo$newname[mo$newname == 'T_M3'] <- expression('T'['M3']) %>% as.character()
+
+
+# primary tumor similar to other specimens
+tu.mo <- mo %>% filter(Var2 == "T_P")
+sub1 <- tu.mo %>% 
+        filter(source_n == "Progressed metastasis"|source_n == "Normal organ"|source_n == "Reginal LN at regressed sites")
+sub1$category <- ifelse(sub1$source_n == "Normal organ",
+                        expression('N'['K,SB']),
+                        ifelse(sub1$source_n == 'Reginal LN at regressed sites',
+                               expression('LN'['1-3']),
+                               expression('M'['1-3']))) %>% as.character() 
+
+
+ggplot(sub1, aes(x = category, y = value, label = newname)) +
+       geom_boxplot(outlier.shape = NA, fill = 'grey') + 
+       geom_label_repel(min.segment.length = 0, force = 3, size = 8, point.padding = 1, parse = T) +
+       geom_point() +
+       labs(y = "Morisita index", x = "") +
+       stat_compare_means(label.y = 0.1, size = 8) +
+       scale_x_discrete(labels = parse(text = unique(sub1$category))) +
+       theme_classic() +
+       theme(axis.title = element_text(size = 25), #, face = "bold"
+             axis.text = element_text(size = 25), #, face = "bold"
+             legend.title=element_text(size = 15), 
+             legend.text = element_text(size = 15),
+             legend.position = 'none') 
+```
+
+# FIG 1G
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+sum.stat = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data//sum.stat.include.csv')[,-2]
+annotate = inner_join(annot,sum.stat) ## merge with summary statistics (library size)
+all = left_join(all.tcr.n.cli.n, annot)
+
+## tcr info
+# change name
+tcr.ls = readRDS('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/tcr-list.rds')
+match.names = inner_join(data.frame(Sample = names(tcr.ls)),annot)
+identical(names(tcr.ls),match.names$Sample)
+names(tcr.ls) = match.names$Name
+
+
+# chord diagram
+# colored by tissue compartment
+mo.aa <- repOverlap(tcr.ls, 'morisita', 'aa',  .verbose = F)
+# rownames(mo.aa)[rownames(mo.aa)=='T_P']=colnames(mo.aa)[colnames(mo.aa)=='T_P']=bquote(T_P) %>% as.character()
+#expression('T'['P']) %>% as.character()
+
+###########
+# Fig2F
+###########
+col.mat = matrix(0,nrow = nrow(mo.aa), ncol = ncol(mo.aa), 
+                 dimnames = list(rownames(mo.aa), colnames(mo.aa)))
+
+for(tissue in unique(annot$Tissue)){
+    
+    idx = annot$Name[annot$Tissue == tissue]
+    col.mat[idx,idx] = 1#'red'
+    
+}
+col.mat['T_P',] = col.mat[,'T_P'] = 2
+col.mat['irLD',] = col.mat[,'irLD'] = 2
+diag(col.mat) = NA
+rownames(col.mat)[rownames(col.mat) == 'irLD'] = 'irAE'
+colnames(col.mat)[colnames(col.mat) == 'irLD'] = 'irAE'
+
+col_fun = colorRamp2(c(0,1,2), c("blue","red","grey"),transparency = 0.5) ## self define color
+order = c("T_P", "LN1", "LN2", "LN3", "NK", "NSB", "SK", "irAE", "T_M1", "T_M2", "T_M3")
+
+tiff('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig2F_chord_batch.tiff',
+     res=300,
+     width = 8,
+     height = 8,
+     units = 'in')
+par(cex = 2)
+rownames(mo.aa)[rownames(mo.aa) == 'irLD'] = colnames(mo.aa)[colnames(mo.aa) == 'irLD'] = 'irAE'
+chordDiagramFromMatrix(mo.aa,
+                       grid.col = 'black',
+                       symmetric = T,
+                       col = col_fun(col.mat),
+                       annotationTrack = c("name","grid"),
+                       order = order)
+dev.off()
+
+###########
+# Fig3C
+###########
+col.mat2 = matrix(0, nrow = nrow(mo.aa), ncol = ncol(mo.aa), dimnames = list(rownames(mo.aa), colnames(mo.aa)))
+tumor.id = annot$Name[annot$Disease_state == 'Tumor']
+col.mat2[tumor.id,tumor.id] = 1
+
+diag(col.mat2) = NA
+
+col_fun2 = colorRamp2(c(0,1), c("grey","red"), transparency = 0.5) ## self define color
+order = c("T_P", "LN1", "LN2", "LN3", "NK", "NSB", "SK", "irAE", "T_M1", "T_M2", "T_M3")
+
+chordDiagramFromMatrix(mo.aa,grid.col = 'black',
+                       symmetric = T,
+                       col = col_fun2(col.mat2),
+                       annotationTrack = c("name","grid"),
+                       order = order)
+```
+
+# FIG 1H
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+all = left_join(all.tcr.n.cli.n,annot)
+set.seed(23)
+all = all[sample(1:nrow(all),nrow(all),replace = F),]
+ttl.reads = read.csv(paste0('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupTable1.csv'))
+
+###############
+# X = PT; Y=(LN2, M2, NSB)  - ns=6945 (M2)
+###############
+X.axis = 'PT'
+Y.axis = c('M2','LN2','NSB')
+ttl.reads[ttl.reads$Sample %in% c('M2','LN2','NSB'),]
+X.size = ttl.reads$total.reads[ttl.reads$Sample == X.axis]
+left.size = min(ttl.reads$total.reads[ttl.reads$Sample %in% c('M2','LN2','NSB')])
+left.all <- all[grepl('LN2|NSB|PT|M2',all$Sample),]
+subsample.ls = setdiff(c('M2','LN2','NSB'),ttl.reads$Sample[ttl.reads$total.reads == left.size])
+
+dat.left=NULL
+for (i in subsample.ls) {
+  data<-subset(all,Sample==i)
+  set.seed(12345)
+  sampled<-table(sample(data$CDR3.amino.acid.sequence,left.size,
+                        prob = data$Read.count/sum(data$Read.count),replace = T))
+  sampled<-as.data.frame(sampled)
+  sampled$Sample<-i
+  dat.left<-rbind(dat.left,sampled)
+}
+
+remain = subset(all,Sample %in% c(ttl.reads$Sample[ttl.reads$total.reads==left.size],X.axis)) %>%
+  dplyr::select(CDR3.amino.acid.sequence,Read.count,Sample) %>%
+  rename(Var1 = CDR3.amino.acid.sequence,
+         Freq = Read.count)
+dat.left = rbind(dat.left,remain)
+
+dat.left  %>%
+  group_by(Sample) %>%
+  summarize(n=sum(Freq)) %>%
+  arrange(n)
+write.csv(dat.left, 
+          'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3D_subsample.csv', 
+          row.names = F)
+
+dat.left = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3D_subsample.csv')
+
+# merge with annotation
+ttl.left <- dat.left %>% left_join(annot)
+countmat.left <- acast(ttl.left, Var1~Sample , value.var = "Freq")
+countmat.left <- as.data.frame(countmat.left)
+countmat.left[is.na(countmat.left)] <- 0
+logp.left <- log2(countmat.left+1)
+colnames(logp.left)
+fig2e.left = list()
+left.size
+
+#####1-1) T_M2 VS. T_P
+dat13 <- logp.left[logp.left$PT!=0|logp.left$M2!=0,]
+dat13$shared <- 'Non-shared'
+dat13$shared[dat13$PT!=0&dat13$M2!=0] <- 'Shared'
+dat13$clone <- rownames(dat13)
+dat13_CATGTGDSNQPQHF <- dat13 %>% filter(clone == 'CATGTGDSNQPQHF')
+prop13 <- all %>% filter(CDR3.amino.acid.sequence %in% dat13$clone[dat13$shared == 'Shared'] & Sample == 'PT')
+
+fig2e.left[[1]] = ggplot(dat13, aes(y = M2, x = PT, col = shared)) +
+                         geom_point(alpha = 0.6, size = 3) +
+                         geom_point(data = dat13_CATGTGDSNQPQHF, 
+                                    aes(y = M2, x = PT, col = shared), 
+                                    size = 5, 
+                                    color = 'blue') +
+                         theme_classic() +
+                         scale_color_manual(values = c("grey","red")) +
+                         geom_abline(intercept = 0, slope = 1,linetype="dotted") +
+                         coord_fixed() +
+                         xlim(0,12.5) +
+                         ylim(0, 12.5) +
+                         labs(x = expression(paste('T'['P'],' (log2), n=12588')),
+                              y = expression(paste('T'['M2'],' (log2), n=6945'))) +
+                         #ggtitle(paste0('Jaccard index: ',round(mean(dat$p),2)))+
+                         ggtitle(paste0('Number of T_P clones:',nrow(dat13[dat13$PT>0,]),"\n",
+                                        'Number of T_M2 clones:',nrow(dat13[dat13$M2>0,]),"\n",
+                                        'Number of shared clones:',nrow(dat13[dat13$shared=='Shared',]),"\n",
+                                        '% T_P reads shared:',round(sum(prop13$productive)*100,2),"\n",
+                                        '% T_P clones shared: ',round(sum(dat13$shared=='Shared')/nrow(dat13[dat13$PT>0,])*100,2)))+
+                         theme(axis.title = element_text(size = 25), #, face = "bold"
+                               axis.text = element_text(size = 25), #, face = "bold"
+                               legend.title=element_text(size=15), 
+                               legend.text=element_text(size=15)) 
+
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3D_1TM2.tiff',
+       fig2e.left[[1]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+#####1-2) NSB vs. T_P
+dat12 <- logp.left[logp.left$PT!=0|logp.left$NSB!=0,]
+dat12$shared <- 'Non-shared'
+dat12$shared[dat12$PT!=0&dat12$NSB!=0] <- 'Shared'
+dat12$clone <- rownames(dat12)
+prop12 <- all %>% filter(CDR3.amino.acid.sequence %in% dat12$clone[dat12$shared == 'Shared'] & Sample == 'PT')
+
+fig2e.left[[2]] = ggplot(dat12, aes(y = NSB, x = PT, col = shared)) +
+                         geom_point(alpha = 0.6, size = 3) +
+                         theme_classic() +
+                         scale_color_manual(values = c("grey","red")) +
+                         geom_abline(intercept = 0, slope = 1,linetype="dotted") +
+                         coord_fixed() +
+                         xlim(0,12.5) +
+                         ylim(0, 12.5) +
+                         labs(x = expression(paste('T'['P'],' (log2), n=12588')),
+                              y = paste0("NSB (log2), n_s=",left.size)) +
+                         #ggtitle(paste0('Jaccard index: ',round(mean(dat$p),2)))+
+                         ggtitle(paste0('Number of T_P clones:',nrow(dat12[dat12$PT>0,]),"\n",
+                                        'Number of NSB clones:',nrow(dat12[dat12$NSB>0,]),"\n",
+                                        'Number of shared clones:',nrow(dat12[dat12$shared=='Shared',]),"\n",
+                                        '% T_P reads shared:',round(sum(prop12$productive)*100,2),"\n",
+                                 '% T_P clones shared: ',round(sum(dat12$shared=='Shared')/nrow(dat12[dat12$PT>0,])*100,2)))+
+                         theme(axis.title = element_text(size = 25), #, face = "bold"
+                               axis.text = element_text(size = 25), #, face = "bold"
+                               legend.title=element_text(size=15), 
+                               legend.text=element_text(size=15)) 
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3D_2NSB.tiff',
+       fig2e.left[[2]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+#####1-3) LN2 vs. T_P
+dat11 <- logp.left[logp.left$PT!=0|logp.left$LN2!=0,]
+dat11$shared <- 'Non-shared'
+dat11$shared[dat11$PT!=0&dat11$LN2!=0] <- 'Shared'
+dat11$clone <- rownames(dat11)
+dat11_CATGTGDSNQPQHF <- dat11 %>% filter(clone == 'CATGTGDSNQPQHF')
+prop11 <- all %>% filter(CDR3.amino.acid.sequence %in% dat11$clone[dat11$shared == 'Shared'] & Sample == 'PT')
+
+
+fig2e.left[[3]] = ggplot(dat11, aes(y = LN2, x = PT, col = shared)) +
+                         geom_point(alpha = 0.6, size = 3) +
+                         geom_point(data = dat11_CATGTGDSNQPQHF, 
+                                    aes(y = LN2, x = PT, col = shared), 
+                                    size = 5, 
+                                    color = 'blue') +
+                         theme_classic() +
+                         scale_color_manual(values = c("grey","red")) +
+                         geom_abline(intercept = 0, slope = 1,linetype = "dotted") +
+                         coord_fixed() +
+                         xlim(0,12.5) +
+                         ylim(0, 12.5) +
+                         labs(x = expression(paste('T'['P'],' (log2), n=12588')),
+                              y = paste0("LN2 (log2), n_s=",left.size)) +
+                         #ggtitle(paste0('Jaccard index: ',round(mean(dat$p),2)))+
+                         ggtitle(paste0('Number of T_P clones:',nrow(dat11[dat11$PT>0,]),"\n",
+                                        'Number of LN2 clones:',nrow(dat11[dat11$LN2>0,]),"\n",
+                                        'Number of shared clones:',nrow(dat11[dat11$shared=='Shared',]),"\n",
+                                        '% T_P reads shared:',round(sum(prop11$productive)*100,2),"\n",
+                            '% T_P clones shared: ',round(sum(dat11$shared=='Shared')/nrow(dat11[dat11$PT>0,])*100,2)))+
+                         theme(axis.title = element_text(size = 25), #, face = "bold"
+                               axis.text = element_text(size = 25), #, face = "bold"
+                               legend.title=element_text(size=15), 
+                               legend.text=element_text(size=15)) 
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3D_3LN2.tiff',
+       fig2e.left[[3]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+
+#### 1-4) combine
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3D_combine.tiff',
+       arrangeGrob(grobs = fig2e.left,nrow=1),
+       width = 8*3, 
+       height = 8,
+       dpi=300)
+
+fig2e.left
+```
+
+# FIG 1I
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+sum.stat = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/sum.stat.include.csv')[,-2]
+annotate = inner_join(annot,sum.stat) ## merge with summary statistics (library size)
+all = left_join(all.tcr.n.cli.n,annot)
+
+## tcr info
+# change name
+tcr.ls = readRDS('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/tcr-list.rds')
+match.names = inner_join(data.frame(Sample = names(tcr.ls)),annot)
+identical(names(tcr.ls),match.names$Sample)
+names(tcr.ls) = match.names$Name
+
+
+overlap.m <- repOverlap(tcr.ls, 'morisita', 'read.count','aa', .norm = T, .verbose = F) # calculate morisita index
+mo <- melt(overlap.m)
+colnames(mo)[1] <- "Name"
+mo <- mo %>% left_join(annotate)
+mo$newname = mo$Name
+mo$newname[mo$newname=='T_P']=expression('T'['P']) %>% as.character()
+mo$newname[mo$newname=='T_M1']=expression('T'['M1']) %>% as.character()
+mo$newname[mo$newname=='T_M2']=expression('T'['M2']) %>% as.character()
+mo$newname[mo$newname=='T_M3']=expression('T'['M3']) %>% as.character()
+
+
+LD.mo <- mo %>% filter(Var2=="irLD")
+sub2 = LD.mo %>% filter(Name!='irLD')
+sub2$category = ifelse(sub2$source_n == "Normal organ", expression('N'['K,SB']),
+                       ifelse(sub2$source_n == 'Reginal LN at regressed sites',expression('LN'['1-3']),
+                              ifelse(sub2$source_n == 'Progressed metastasis',expression('M'['1-3']),
+                                     ifelse(sub2$source_n == 'Primary tumor',expression('T'['P']),'SK')))) %>% as.character() 
+sub2$category = factor(sub2$category,levels = c(expression('N'['K,SB']),
+                                                expression('T'['P']),
+                                                expression('M'['1-3']),
+                                                expression('LN'['1-3']),
+                                                'SK') %>% as.character)
+
+ggplot(sub2, aes(x = category, y=value, label = newname)) +
+       geom_boxplot(outlier.shape = NA, fill = 'grey') + 
+       geom_label_repel(min.segment.length = 0, size = 7, point.padding = 1, parse = T) +
+       geom_point() + 
+       labs(y = "Morisita index", x = "") +
+       # stat_compare_means(label.y = 0.04,size = 8)+ # (p=0.31)
+       scale_x_discrete(labels = parse(text = levels(sub2$category))) +
+       theme_classic() +
+       theme(axis.title = element_text(size = 25), #, face = "bold"
+             axis.text = element_text(size = 25), #, face = "bold"
+             legend.title = element_text(size = 15), 
+             legend.text = element_text(size = 15),
+             legend.position = 'none') 
+```
+
+# FIG 1J
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+sum.stat = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data//sum.stat.include.csv')[,-2]
+annotate = inner_join(annot,sum.stat) ## merge with summary statistics (library size)
+all = left_join(all.tcr.n.cli.n, annot)
+
+## tcr info
+# change name
+tcr.ls = readRDS('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/tcr-list.rds')
+match.names = inner_join(data.frame(Sample = names(tcr.ls)),annot)
+identical(names(tcr.ls),match.names$Sample)
+names(tcr.ls) = match.names$Name
+
+
+# chord diagram
+# colored by tissue compartment
+mo.aa <- repOverlap(tcr.ls, 'morisita', 'aa',  .verbose = F)
+# rownames(mo.aa)[rownames(mo.aa)=='T_P']=colnames(mo.aa)[colnames(mo.aa)=='T_P']=bquote(T_P) %>% as.character()
+#expression('T'['P']) %>% as.character()
+
+###########
+# Fig2F
+###########
+col.mat = matrix(0,nrow = nrow(mo.aa), ncol = ncol(mo.aa), 
+                 dimnames = list(rownames(mo.aa), colnames(mo.aa)))
+
+for(tissue in unique(annot$Tissue)){
+    
+    idx = annot$Name[annot$Tissue == tissue]
+    col.mat[idx,idx] = 1#'red'
+    
+}
+col.mat['T_P',] = col.mat[,'T_P'] = 2
+col.mat['irLD',] = col.mat[,'irLD'] = 2
+diag(col.mat) = NA
+rownames(col.mat)[rownames(col.mat) == 'irLD'] = 'irAE'
+colnames(col.mat)[colnames(col.mat) == 'irLD'] = 'irAE'
+
+col_fun = colorRamp2(c(0,1,2), c("blue","red","grey"),transparency = 0.5) ## self define color
+order = c("T_P", "LN1", "LN2", "LN3", "NK", "NSB", "SK", "irAE", "T_M1", "T_M2", "T_M3")
+
+tiff('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig2F_chord_batch.tiff',
+     res=300,
+     width = 8,
+     height = 8,
+     units = 'in')
+par(cex = 2)
+rownames(mo.aa)[rownames(mo.aa) == 'irLD'] = colnames(mo.aa)[colnames(mo.aa) == 'irLD'] = 'irAE'
+chordDiagramFromMatrix(mo.aa,
+                       grid.col = 'black',
+                       symmetric = T,
+                       col = col_fun(col.mat),
+                       annotationTrack = c("name","grid"),
+                       order = order)
+dev.off()
+
+###########
+# Fig3C
+###########
+col.mat2 = matrix(0, nrow = nrow(mo.aa), ncol = ncol(mo.aa), dimnames = list(rownames(mo.aa), colnames(mo.aa)))
+tumor.id = annot$Name[annot$Disease_state == 'Tumor']
+col.mat2[tumor.id,tumor.id] = 1
+
+diag(col.mat2) = NA
+
+col_fun2 = colorRamp2(c(0,1), c("grey","red"), transparency = 0.5) ## self define color
+order = c("T_P", "LN1", "LN2", "LN3", "NK", "NSB", "SK", "irAE", "T_M1", "T_M2", "T_M3")
+
+tiff('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig3C_chord_disease.tiff',
+     res=300,
+     width = 8,
+     height = 8,
+     units = 'in')
+par(cex = 2)
+chordDiagramFromMatrix(mo.aa,grid.col = 'black',
+                       symmetric = T,
+                       col = col_fun2(col.mat2),
+                       annotationTrack = c("name","grid"),
+                       order = order)
+dev.off()
+
+
+###########
+# Fig4-chord
+###########
+
+col.mat3 = matrix(0, nrow = nrow(mo.aa), ncol = ncol(mo.aa), dimnames = list(rownames(mo.aa), colnames(mo.aa)))
+LD.id = which(rownames(col.mat3) == 'irAE')
+col.mat3[LD.id,] = col.mat3[,LD.id] =  1
+
+diag(col.mat3) = NA
+
+col_fun2 = colorRamp2(c(0,1), c("grey","red"), transparency = 0.5) ## self define color
+order = c("T_P", "LN1", "LN2", "LN3", "NK", "NSB", "SK", "irAE", "T_M1", "T_M2", "T_M3")
+
+chordDiagramFromMatrix(mo.aa, 
+                       grid.col = 'black', 
+                       symmetric = T, 
+                       col = col_fun2(col.mat3),
+                       annotationTrack = c("name","grid"),
+                       order = order)
+```
+
+# FIG 1K
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+all = left_join(all.tcr.n.cli.n, annot)
+set.seed(23)
+all = all[sample(1:nrow(all),nrow(all),replace = F),]
+ttl.reads = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupTable1.csv')
+
+###############
+#  X='LD'Y=('PT','LN2','NSB') - ns=12588 (PT)
+###############
+X.axis = 'LD'
+Y.axis = c('PT','LN2','NSB')
+ttl.reads[ttl.reads$Sample %in% c('PT','LN2','NSB'),]
+X.size = ttl.reads$total.reads[ttl.reads$Sample == X.axis]
+left.size = min(ttl.reads$total.reads[ttl.reads$Sample %in% c('PT','LN2','NSB')])
+left.all <- all[grepl('LN2|NSB|PT|LD',all$Sample),]
+subsample.ls = setdiff(c('PT','LN2','NSB'), ttl.reads$Sample[ttl.reads$total.reads == left.size])
+
+dat.left=NULL
+for (i in subsample.ls) {
+     data<-subset(all,Sample==i)
+     set.seed(12345)
+     sampled<-table(sample(data$CDR3.amino.acid.sequence,left.size,
+                           prob = data$Read.count/sum(data$Read.count),replace = T))
+     sampled<-as.data.frame(sampled)
+     sampled$Sample<-i
+     dat.left<-rbind(dat.left,sampled)
+}
+ 
+remain = subset(all,Sample %in% c(ttl.reads$Sample[ttl.reads$total.reads==left.size],X.axis)) %>%
+         dplyr::select(CDR3.amino.acid.sequence,Read.count,Sample) %>%
+         rename(Var1 = CDR3.amino.acid.sequence,
+                Freq = Read.count)
+dat.left = rbind(dat.left, remain)
+ 
+dat.left  %>%
+     group_by(Sample) %>%
+     summarize(n=sum(Freq)) %>%
+     arrange(n)
+write.csv(dat.left, 'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig4B_subsample.csv', row.names = F)
+
+dat.left = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig4B_subsample.csv')
+
+# merge with annotation
+ttl.left <- dat.left %>% left_join(annot)
+countmat.left <- acast(ttl.left, Var1~Sample , value.var = "Freq")
+countmat.left <- as.data.frame(countmat.left)
+countmat.left[is.na(countmat.left)] <- 0
+logp.left <- log2(countmat.left+1)
+colnames(logp.left)
+fig2e.left = list()
+left.size
+
+#####1-1) LN2 vs. irAE
+dat11 <- logp.left[logp.left$LD!=0|logp.left$LN2!=0,]
+dat11$shared <- 'Non-shared'
+dat11$shared[dat11$LD!=0&dat11$LN2!=0] <- 'Shared'
+dat11$clone <- rownames(dat11)
+dat11_CATGTGDSNQPQHF <- dat11 %>% filter(clone == 'CATGTGDSNQPQHF')
+prop11 <- all %>% filter(CDR3.amino.acid.sequence %in% dat11$clone[dat11$shared == 'Shared'] & Sample == 'LD')
+
+
+fig2e.left[[1]] = ggplot(dat11, aes(y = LN2, x = LD, col = shared)) +
+                         geom_point(alpha = 0.6, size = 3) +
+                         geom_point(data = dat11_CATGTGDSNQPQHF, 
+                                    aes(y = LN2, x = LD, col = shared), 
+                                    size = 5, 
+                                    color = 'blue') +
+                         theme_classic() +
+                         scale_color_manual(values = c("grey","red")) +
+                         geom_abline(intercept = 0, slope = 1, linetype="dotted") +
+                         coord_fixed() +
+                         xlim(0,12.5) +
+                         ylim(0, 12.5) +
+                         labs(x = paste0("irAE (log2), n=", X.size),
+                              y = paste0("LN2 (log2), n_s=",left.size)) +
+                         #ggtitle(paste0('Jaccard index: ',round(mean(dat$p),2)))+
+                         ggtitle(paste0('Number of irAE clones:',nrow(dat11[dat11$LD>0,]),"\n",
+                                        'Number of LN2 clones:',nrow(dat11[dat11$LN2>0,]),"\n",
+                                        'Number of shared clones:',nrow(dat11[dat11$shared=='Shared',]),"\n",
+                                        '% irAE reads shared:',round(sum(prop11$productive)*100,2),"\n",
+                                 '% irAE clones shared: ',round(sum(dat11$shared=='Shared')/nrow(dat11[dat11$LD>0,])*100,2)))+
+                         theme(axis.title = element_text(size = 25), #, face = "bold"
+                               axis.text = element_text(size = 25), #, face = "bold"
+                               legend.title = element_text(size = 15), 
+                               legend.text = element_text(size = 15)) 
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig4B_1LN2.tiff',
+       fig2e.left[[1]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+#####1-2) NSB vs. irAE
+dat12 <- logp.left[logp.left$LD!=0|logp.left$NSB!=0,]
+dat12$shared <- 'Non-shared'
+dat12$shared[dat12$LD!=0&dat12$NSB!=0] <- 'Shared'
+dat12$clone <- rownames(dat12)
+prop12 <- all %>% filter(CDR3.amino.acid.sequence %in% dat12$clone[dat12$shared == 'Shared'] & Sample == 'LD')
+
+fig2e.left[[2]] = ggplot(dat12, aes(y = NSB, x = LD, col = shared)) +
+                         geom_point(alpha = 0.6, size = 3) +
+                         theme_classic() +
+                         scale_color_manual(values = c("grey", "red")) +
+                         geom_abline(intercept = 0, slope = 1,linetype="dotted") +
+                         coord_fixed() +
+                         xlim(0, 12.5) +
+                         ylim(0, 12.5) +
+                         labs(x = paste0("irAE (log2), n=", X.size),
+                              y = paste0("NSB (log2), n_s=", left.size)) +
+                         #ggtitle(paste0('Jaccard index: ',round(mean(dat$p),2)))+
+                         ggtitle(paste0('Number of irAE clones:',nrow(dat12[dat12$LD>0,]),"\n",
+                                        'Number of NSB clones:',nrow(dat12[dat12$NSB>0,]),"\n",
+                                        'Number of shared clones:',nrow(dat12[dat12$shared=='Shared',]),"\n",
+                                        '% irAE reads shared:',round(sum(prop12$productive)*100,2),"\n",
+                                      '% irAE clones shared: ',round(sum(dat12$shared=='Shared')/nrow(dat12[dat12$LD>0,])*100,2)))+
+                         theme(axis.title = element_text(size = 25), #, face = "bold"
+                               axis.text = element_text(size = 25), #, face = "bold"
+                               legend.title=element_text(size=15), 
+                               legend.text=element_text(size=15)) 
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig4B_2NSB.tiff',
+       fig2e.left[[2]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+#####1-3) T_P VS. irAE
+dat13 <- logp.left[logp.left$PT!=0|logp.left$LD!=0,]
+dat13$shared <- 'Non-shared'
+dat13$shared[dat13$PT!=0&dat13$LD!=0] <- 'Shared'
+dat13$clone <- rownames(dat13)
+dat13_CATGTGDSNQPQHF <- dat13 %>% filter(clone == 'CATGTGDSNQPQHF')
+prop13 <- all %>% filter(CDR3.amino.acid.sequence %in% dat13$clone[dat13$shared == 'Shared'] & Sample == 'LD')
+
+fig2e.left[[3]] = ggplot(dat13, aes(y = PT, x = LD, col = shared)) +
+                         geom_point(alpha = 0.6, size = 3) +
+                           geom_point(data = dat13_CATGTGDSNQPQHF, 
+                                      aes(y = LN2, x = LD, col = shared), 
+                                      size = 5, 
+                                      color = 'blue') +
+                         theme_classic() +
+                         scale_color_manual(values = c("grey", "red")) +
+                         geom_abline(intercept = 0, slope = 1,linetype="dotted") +
+                         coord_fixed() +
+                         xlim(0,12.5) +
+                         ylim(0, 12.5) +
+                         labs(x = paste0('irAE (log2), n=',X.size),
+                              y = expression(paste('T'['P'],' (log2), n=12588'))) +
+                         #ggtitle(paste0('Jaccard index: ',round(mean(dat$p),2)))+
+                         ggtitle(paste0('Number of irAE clones:',nrow(dat13[dat13$LD>0,]),"\n",
+                                        'Number of T_P clones:',nrow(dat13[dat13$PT>0,]),"\n",
+                                        'Number of shared clones:',nrow(dat13[dat13$shared=='Shared',]),"\n",
+                                        '% irAE reads shared:',round(sum(prop13$productive)*100,2),"\n",
+                                      '% irAE clones shared: ',round(sum(dat13$shared=='Shared')/nrow(dat13[dat13$LD>0,])*100,2)))+
+                         theme(axis.title = element_text(size = 25), #, face = "bold"
+                               axis.text = element_text(size = 25), #, face = "bold"
+                               legend.title=element_text(size=15), 
+                               legend.text=element_text(size=15)) 
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig4B_3TP.tiff',
+       fig2e.left[[3]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+#### 1-4) combine
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/Fig4B_combine.tiff',
+       arrangeGrob(grobs = fig2e.left, nrow = 1),
+       width = 8*3,
+       height = 8,
+       dpi=300)
+fig2e.left
+```
+
+# FIG S1
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+sum.stat = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data//sum.stat.include.csv')[,-2]
+annotate = inner_join(annot,sum.stat) ## merge with summary statistics (library size)
+all = left_join(all.tcr.n.cli.n, annot)
+
+## tcr info
+# change name
+tcr.ls = readRDS('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/tcr-list.rds')
+match.names = inner_join(data.frame(Sample = names(tcr.ls)),annot)
+identical(names(tcr.ls),match.names$Sample)
+names(tcr.ls) = match.names$Name
+
+
+# chord diagram
+# colored by tissue compartment
+mo.aa <- repOverlap(tcr.ls, 'morisita', 'aa',  .verbose = F)
+# rownames(mo.aa)[rownames(mo.aa)=='T_P']=colnames(mo.aa)[colnames(mo.aa)=='T_P']=bquote(T_P) %>% as.character()
+#expression('T'['P']) %>% as.character()
+
+###########
+# Fig2F
+###########
+col.mat = matrix(0,nrow = nrow(mo.aa), ncol = ncol(mo.aa), 
+                 dimnames = list(rownames(mo.aa), colnames(mo.aa)))
+
+for(tissue in unique(annot$Tissue)){
+    
+    idx = annot$Name[annot$Tissue == tissue]
+    col.mat[idx,idx] = 1#'red'
+    
+}
+col.mat['T_P',] = col.mat[,'T_P'] = 2
+col.mat['irLD',] = col.mat[,'irLD'] = 2
+diag(col.mat) = NA
+rownames(col.mat)[rownames(col.mat) == 'irLD'] = 'irAE'
+colnames(col.mat)[colnames(col.mat) == 'irLD'] = 'irAE'
+
+col_fun = colorRamp2(c(0,1,2), c("blue","red","grey"),transparency = 0.5) ## self define color
+order = c("T_P", "LN1", "LN2", "LN3", "NK", "NSB", "SK", "irAE", "T_M1", "T_M2", "T_M3")
+
+rownames(mo.aa)[rownames(mo.aa) == 'irLD'] = colnames(mo.aa)[colnames(mo.aa) == 'irLD'] = 'irAE'
+chordDiagramFromMatrix(mo.aa,
+                       grid.col = 'black',
+                       symmetric = T,
+                       col = col_fun(col.mat),
+                       annotationTrack = c("name","grid"),
+                       order = order)
+```
+
+# FIG S2
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+all = left_join(all.tcr.n.cli.n, annot)
+ttl.reads = inner_join(read.csv(paste0('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupTable1.csv')), annot)
+ttl.reads$total.clones = ttl.reads$n.clones.aa
+
+################
+# Unnormalize
+################
+## 1) unnormalize: shareness with irLD
+sum.stat <- all  %>% group_by(Name,Tissue,Disease_state)  %>% 
+            summarise(total.reads = sum(Read.count), total.clones = n())
+
+sum.stat$label = sum.stat$Name
+sum.stat$label[sum.stat$label == "irLD"] = 'irAE'
+sum.stat$label[sum.stat$label == "T_P"] = expression('T'['P']) %>% as.character
+sum.stat$label[sum.stat$label == "T_M1"] = expression('T'['M1']) %>% as.character
+sum.stat$label[sum.stat$label == "T_M2"] = expression('T'['M2']) %>% as.character
+sum.stat$label[sum.stat$label == "T_M3"] = expression('T'['M3']) %>% as.character
+
+
+supfig1 = ggplot(sum.stat, aes(x = total.reads, y = total.clones, label = label)) +
+                 geom_point(size = 3) +
+                 geom_label_repel(point.padding = 1, min.segment.length = 0, size = 8, parse = T) +
+                 geom_smooth(method = 'rlm') +
+                 stat_cor(method = "spearman", size = 8) +
+                 theme_classic() +
+                 labs(x = "Library size", y="Total number of clones") +
+                 theme(axis.title = element_text(size = 25), #, face = "bold"
+                       axis.text = element_text(size = 25), #, face = "bold"
+                       legend.title = element_text(size = 20), 
+                       legend.text = element_text(size = 20)) +
+                 xlim(0, 35000) + ylim(0, 35000)
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig1B.tiff',
+       supfig1,
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+supfig1
+```
+
+# FIG S3
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+all = left_join(all.tcr.n.cli.n,annot)
+ttl.reads = inner_join(read.csv(paste0('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupTable1.csv')),annot)
+ttl.reads$total.clones = ttl.reads$n.clones.aa
+
+################
+# Unnormalize
+################
+## 1) unnormalize: shareness with irLD
+sum.stat <- all %>% group_by(Name, Tissue, Disease_state) %>% summarise(total.reads = sum(Read.count), total.clones = n())
+tu.LD <- all %>% filter(Sample == "LD") 
+tu.LD <- tu.LD[,c('CDR3.amino.acid.sequence', 'Read.count','productive')]
+tu.overlap.LD <- tu.LD %>% left_join(all, by = c("CDR3.amino.acid.sequence"))
+test.LD <- tu.overlap.LD %>% 
+           group_by(Name) %>% 
+           summarise(n = n(), prop=sum(productive.x)) %>% 
+           left_join(sum.stat) %>% 
+           mutate(shared.pct1 = n/total.clones,Disease_state = as.factor(Disease_state))
+test.LD$shared.pct2 = test.LD$n/test.LD$n[test.LD$Name == 'irLD']
+
+
+test.LD$label = test.LD$Name
+test.LD$label[test.LD$label == "irLD"] = 'irAE'
+test.LD$label[test.LD$label == "T_P"] = expression('T'['P']) %>% as.character
+test.LD$label[test.LD$label == "T_M1"] = expression('T'['M1']) %>% as.character
+test.LD$label[test.LD$label == "T_M2"] = expression('T'['M2']) %>% as.character
+test.LD$label[test.LD$label == "T_M3"] = expression('T'['M3']) %>% as.character
+
+supfig2a = list()
+supfig2a[[1]] = ggplot(test.LD %>% filter(prop<1), 
+                       aes(x = total.clones, y = shared.pct2, label = label)) +
+                       geom_point(size = 3) +
+                       geom_label_repel(point.padding = 1, min.segment.length = 0, size = 8,parse = T) +
+                       geom_smooth(method = 'rlm') +
+                       stat_cor(method = "spearman", label.y = 0.13, size = 8) +
+                       theme_classic() +
+                       labs(x = "Unnormalized number of clones",
+                            y = "Percent of shared clones in irAE") +
+                       theme(axis.title = element_text(size = 25), #, face = "bold"
+                       axis.text = element_text(size = 25), #, face = "bold"
+                       legend.title = element_text(size = 20), 
+                       legend.text = element_text(size = 20)) +
+                       xlim(0, 30000) + ylim(0, 0.14)
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig2A_clone1irLD.tiff',
+       supfig2a[[1]],
+       width = 8, 
+       height = 8,
+       dpi=300)
+
+
+## 2) unnormalize: shareness with LN2
+tu.LN2 <- all %>% filter(Sample == "LN2") 
+tu.LN2 <- tu.LN2[,c('CDR3.amino.acid.sequence','Read.count','productive')]
+tu.overlap.LN2 <- tu.LN2 %>% left_join(all, by = c("CDR3.amino.acid.sequence"))
+test.LN2 <- tu.overlap.LN2 %>% 
+            group_by(Name) %>% 
+            summarise(n = n(), prop = sum(productive.x)) %>% 
+            left_join(sum.stat) %>% 
+            mutate(shared.pct1 = n/total.clones, Disease_state = as.factor(Disease_state))
+test.LN2$shared.pct2 = test.LN2$n/test.LN2$n[test.LN2$Name == 'LN2']
+
+test.LN2$label = test.LN2$Name
+test.LN2$label[test.LN2$label == "irLD"] = 'irAE'
+test.LN2$label[test.LN2$label == "T_P"] = expression('T'['P']) %>% as.character
+test.LN2$label[test.LN2$label == "T_M1"] = expression('T'['M1']) %>% as.character
+test.LN2$label[test.LN2$label == "T_M2"] = expression('T'['M2']) %>% as.character
+test.LN2$label[test.LN2$label == "T_M3"] = expression('T'['M3']) %>% as.character
+
+supfig2a[[2]]= ggplot(test.LN2 %>% filter(prop<1), 
+                      aes(x = total.clones , y = shared.pct2, label=label))+
+                      geom_point(size = 3) +
+                      geom_label_repel(point.padding = 1,
+                                       min.segment.length = 0, size = 8,parse = T) +
+                      geom_smooth(method = 'rlm') +
+                      stat_cor(method = "spearman", label.y = 0.13, size = 8) +
+                      theme_classic() +
+                      labs(x = "Unnormalized number of clones",
+                           y = "Percent of shared clones in LN2") +
+                      theme(axis.title = element_text(size = 25), #, face = "bold"
+                            axis.text = element_text(size = 25), #, face = "bold"
+                            legend.title = element_text(size = 20), 
+                            legend.text = element_text(size = 20)) +
+                            xlim(0, 30000) + ylim(0, 0.14)
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig2A_clone2LN2.tiff',
+       supfig2a[[2]],
+       width = 8, 
+       height = 8,
+       dpi = 300)
+
+
+## 1-2) combine
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig2A_unnormalized.tiff',
+       arrangeGrob(grobs = supfig2a, ncol = 2),
+       width = 10*2, 
+       height = 8,
+       dpi = 300)
+
+
+##################
+# Normalize to T_M1 (n_s=775)
+##################
+ttl.reads %>% arrange(-total.clones)
+normalize.size = min(ttl.reads$total.clones)
+subsample.ls = setdiff(unique(ttl.reads$rn), ttl.reads$rn[ttl.reads$total.clones == normalize.size])
+
+res=NULL
+for (i in subsample.ls) {
+     data <- subset(all.tcr.n.cli.n, rn == i)
+     ss = data[, c('CDR3.amino.acid.sequence','Read.count')]
+     colnames(ss)[1] = c('Var1')
+     
+     set.seed(12345)
+     sampled <- table(sample(data$CDR3.amino.acid.sequence,normalize.size,
+                             prob = data$Read.count/sum(data$Read.count), replace = F))
+     sampled <- as.data.frame(sampled)
+     sampled = inner_join(sampled, ss)
+     sampled$rn <- i
+     res <- rbind(sampled, res)
+}
+remain = subset(all.tcr.n.cli.n,rn==ttl.reads$rn[ttl.reads$total.clones==normalize.size]) %>%
+         dplyr::select(CDR3.amino.acid.sequence,Read.count,rn) %>%
+         mutate(Freq=1) %>% 
+         rename(Var1 = CDR3.amino.acid.sequence,
+                Read.count = Read.count)
+res = rbind(res, remain[, c("Var1", "Freq", "Read.count", "rn")])
+
+sampled <- res
+sampled  %>%
+     group_by(rn) %>%
+     summarize(n = sum(Freq)) %>%
+     arrange(n)
+ 
+# subsampling, merge with annot (n_s=775)
+sampled.tcr <- res %>% left_join(annot)
+sampled.tcr %>% arrange(Var1, Freq) %>% head
+sampled.tcr = sampled.tcr %>% 
+              group_by(Sample,Groups,Name,Tissue,Disease_state) %>%
+              mutate(percet_rank = percent_rank(Read.count)) %>% data.frame
+colnames(sampled.tcr)[1] <- "CDR3.amino.acid.sequence"
+write.csv(sampled.tcr, 
+          'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/weighted_SupFig2A_subsample.csv',
+          row.names = F)
+
+sampled.tcr = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/weighted_SupFig2A_subsample.csv')
+
+#### 3) Normalized - irLD
+norm.tu.LD <- sampled.tcr %>% filter(Sample == "LD") 
+norm.tu.LD <- norm.tu.LD[,c('CDR3.amino.acid.sequence', 'Read.count')]
+norm.tu.overlap.LD <- norm.tu.LD %>% left_join(sampled.tcr, by = c("CDR3.amino.acid.sequence"))
+norm.test.LD <- norm.tu.overlap.LD %>% 
+                group_by(Name) %>% 
+                summarise(n = n()) %>% 
+                left_join(sum.stat) %>% 
+                mutate(shared.pct1 = n/total.clones, Disease_state = as.factor(Disease_state))
+norm.test.LD$shared.pct2 = norm.test.LD$n/norm.test.LD$n[norm.test.LD$Name == 'irLD']
+
+norm.test.LD$label = norm.test.LD$Name
+norm.test.LD$label[norm.test.LD$label == "irLD"] = 'irAE'
+norm.test.LD$label[norm.test.LD$label == "T_P"] = expression('T'['P']) %>% as.character
+norm.test.LD$label[norm.test.LD$label == "T_M1"] = expression('T'['M1']) %>% as.character
+norm.test.LD$label[norm.test.LD$label == "T_M2"] = expression('T'['M2']) %>% as.character
+norm.test.LD$label[norm.test.LD$label == "T_M3"] = expression('T'['M3']) %>% as.character
+
+supfig2a.bottom = list()
+supfig2a.bottom[[1]] = ggplot(norm.test.LD %>% filter(Name != 'irLD'),
+                              aes(x = total.clones , y = shared.pct2, label = label)) +
+                              geom_point(size = 3)+
+                              geom_label_repel(point.padding = 1, min.segment.length = 0,
+                                               size = 8,
+                                               parse = T) +
+                              geom_smooth(method = 'rlm') +
+                              stat_cor(method = "spearman", label.y = 0.13, size = 8) +
+                              theme_classic() +
+                              labs(x = "Unnormalized number of clones", y = "Percent of shared clones in irAE" )+
+                              theme(axis.title = element_text(size = 25), #, face = "bold"
+                                    axis.text = element_text(size = 25), #, face = "bold"
+                                    legend.title = element_text(size = 20), 
+                                    legend.text = element_text(size=20)) +
+                                    xlim(0, 30000) + ylim(0, 0.14)
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig2B_norm1irLD.tiff',
+       supfig2a.bottom[[1]],
+       width = 10, 
+       height = 8,
+       dpi=300)
+
+
+#### 4) Normalized - LN2
+norm.tu.LN2 <- sampled.tcr %>% filter(Sample == "LN2") 
+norm.tu.LN2 <- norm.tu.LN2[,c('CDR3.amino.acid.sequence','Read.count')]
+norm.tu.overlap.LN2 <- norm.tu.LN2 %>% left_join(sampled.tcr, by = c("CDR3.amino.acid.sequence"))
+norm.test.LN2 <- norm.tu.overlap.LN2 %>% 
+                 group_by(Name) %>% 
+                 summarise(n = n()) %>% 
+                 left_join(sum.stat) %>% 
+                 mutate(shared.pct1 = n/total.clones, Disease_state = as.factor(Disease_state))
+norm.test.LN2$shared.pct2 = norm.test.LN2$n/norm.test.LN2$n[norm.test.LN2$Name == 'LN2']
+
+norm.test.LN2$label = norm.test.LN2$Name
+norm.test.LN2$label[norm.test.LN2$label == "irLD"] = 'irAE'
+norm.test.LN2$label[norm.test.LN2$label == "T_P"] = expression('T'['P']) %>% as.character
+norm.test.LN2$label[norm.test.LN2$label == "T_M1"] = expression('T'['M1']) %>% as.character
+norm.test.LN2$label[norm.test.LN2$label == "T_M2"] = expression('T'['M2']) %>% as.character
+norm.test.LN2$label[norm.test.LN2$label == "T_M3"] = expression('T'['M3']) %>% as.character
+
+supfig2a.bottom[[2]]= ggplot(norm.test.LN2 %>% filter(Name!='LN2'),
+                             aes(x = total.clones , y = shared.pct2, label = label)) +
+                             geom_point(size = 3) +
+                             geom_label_repel(point.padding = 1,min.segment.length = 0,
+                                              size = 8,parse = T) +
+                             geom_smooth(method = 'rlm') +
+                             stat_cor(method = "spearman", label.y = 0.13, size = 8) +
+                             theme_classic() +
+                             labs(x = "Unnormalized number of clones", 
+                                  y = "Percent of shared clones in LN2") +
+                             theme(axis.title = element_text(size = 25), #, face = "bold"
+                                   axis.text = element_text(size = 25), #, face = "bold"
+                                   legend.title=element_text(size=20), 
+                                   legend.text=element_text(size=20)) +
+                             xlim(0, 30000) + ylim(0, 0.14)
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig2B_norm2LN2.tiff',
+       supfig2a.bottom[[2]],
+       width = 10, 
+       height = 8,
+       dpi=300)
+
+## 3-4) combine
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig2B_normalized.tiff',
+       arrangeGrob(grobs = supfig2a.bottom, ncol = 2),
+       width = 10*2, 
+       height = 8,
+       dpi = 300)
+```
+
+```{r, fig.width=20. fig.height=10}
+supfig2a
+```
+
+```{r, fig.width=20. fig.height=10}
+supfig2a.bottom
+```
+
+# FIG S4
+
+```{r, fig.width=20, fig.height=10}
+annote <- read.csv("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.include.csv",as.is=T)
+cli <- read.csv("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/sum.stat.include.csv",as.is=T)
+
+cli <- cli %>% left_join(annote)
+
+trace("parse.immunoseq3",edit=TRUE)  # change to count (templates/reads) - line 6
+tcr <- parse.folder("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/include/",'immunoseq3')   # CDR3 extraction and gene alignment using immunoseq
+
+# get productive reads
+productive.tcr <- get.inframes(tcr)
+productive.tcr.c <- productive.tcr
+
+# annotations
+annote <- cli[order(cli$rn),]
+annote$lable <- annote$Sample
+cli$lable <- cli$Sample
+names <- annote$Sample
+names(productive.tcr.c) <- names
+names(productive.tcr) <- names
+
+saveRDS(productive.tcr,'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/tcr-list.rds')
+
+##################
+# agregrate by a.a
+##################
+for (i in 1:length(productive.tcr.c)){
+    productive.tcr.c[[i]] <- productive.tcr.c[[i]][,3:8]
+    kid <- which(grepl("^C",productive.tcr.c[[i]]$CDR3.amino.acid.sequence) &        (grepl("F$",productive.tcr.c[[i]]$CDR3.amino.acid.sequence)|grepl("W$",productive.tcr.c[[i]]$CDR3.amino.acid.sequence)) & nchar(productive.tcr.c[[i]]$CDR3.amino.acid.sequence) >= 7)
+    productive.tcr.c[[i]] <- productive.tcr.c[[i]][kid,]
+    productive.tcr.c[[i]] <- aggregate(productive.tcr.c[[i]][1], by = productive.tcr.c[[i]]['CDR3.amino.acid.sequence'], sum)
+    productive.tcr.c[[i]]$productive <- productive.tcr.c[[i]][,2]/sum(productive.tcr.c[[i]][,2])
+    productive.tcr.c[[i]]$rn <- i
+    productive.tcr.c[[i]]$rank.percent <- percent_rank(productive.tcr.c[[i]]$productive)
+    cut1 <- quantile(productive.tcr.c[[i]]$productive, probs = 0.99)
+    productive.tcr.c[[i]]$top1 <- ifelse(productive.tcr.c[[i]]$productive >= cut1, 1,0)
+    cut5 <- quantile(productive.tcr.c[[i]]$productive, probs = 0.95)
+    productive.tcr.c[[i]]$top5 <- ifelse(productive.tcr.c[[i]]$productive >= cut5, 1,0)
+    cut10 <- quantile(productive.tcr.c[[i]]$productive, probs = 0.90)
+    productive.tcr.c[[i]]$top10 <- ifelse(productive.tcr.c[[i]]$productive >= cut10, 1,0)
+}
+
+# combined all sequences into a file 
+all.tcr <- do.call("rbind", productive.tcr.c)
+
+# combine sample annotations to TCR seq
+all.tcr.n.cli <- merge(all.tcr, annote[,c("rn","lable","source_n")])
+
+# remove samples with less than 1000 reads 
+all.tcr.n.cli.n <- all.tcr.n.cli %>% group_by(lable) %>%  mutate(sum = sum(Read.count)) %>% filter(sum > 1000)
+
+all.tcr.n.cli.n %>% group_by( lable,top1) %>% summarise(n = n()) 
+all.tcr.n.cli.n %>% group_by( lable,top5) %>% summarise(n = n()) 
+all.tcr.n.cli.n %>% group_by( lable,top10) %>% summarise(n = n()) 
+write.csv(all.tcr.n.cli.n, "C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv", row.names = F) 
+
+##################
+# aggregrate by nt 
+##################
+productive.tcr.c <- productive.tcr
+for (i in 1:length(productive.tcr.c)){
+    productive.tcr.c[[i]] <- productive.tcr.c[[i]][,3:8]
+    kid <- which(grepl("^C",productive.tcr.c[[i]]$CDR3.amino.acid.sequence) & (grepl("F$",productive.tcr.c[[i]]$CDR3.amino.acid.sequence)|grepl("W$",productive.tcr.c[[i]]$CDR3.amino.acid.sequence)) & nchar(productive.tcr.c[[i]]$CDR3.amino.acid.sequence) >= 7)
+    productive.tcr.c[[i]] <- productive.tcr.c[[i]][kid,]
+    productive.tcr.c[[i]] <- aggregate(productive.tcr.c[[i]][1], by = productive.tcr.c[[i]]['CDR3.nucleotide.sequence'], sum)
+    productive.tcr.c[[i]]$productive <- productive.tcr.c[[i]][,2]/sum(productive.tcr.c[[i]][,2])
+    productive.tcr.c[[i]]$rn <- i
+    productive.tcr.c[[i]]$rank.percent <- percent_rank(productive.tcr.c[[i]]$productive)
+    cut1 <- quantile(productive.tcr.c[[i]]$productive, probs = 0.99)
+    productive.tcr.c[[i]]$top1 <- ifelse(productive.tcr.c[[i]]$productive >= cut1, 1,0)
+    cut5 <- quantile(productive.tcr.c[[i]]$productive, probs = 0.95)
+    productive.tcr.c[[i]]$top5 <- ifelse(productive.tcr.c[[i]]$productive >= cut5, 1,0)
+    cut10 <- quantile(productive.tcr.c[[i]]$productive, probs = 0.90)
+    productive.tcr.c[[i]]$top10 <- ifelse(productive.tcr.c[[i]]$productive >= cut10, 1,0)
+}
+
+all.tcr.nt <- do.call("rbind", productive.tcr.c)
+all.tcr.n.cli.nt <- merge(all.tcr.nt, annote[,c("rn","lable","source_n")])
+write.csv(all.tcr.n.cli.nt, "C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis-nt.csv", row.names = F)
+
+# morisita index
+overlap.m <- repOverlap(productive.tcr, 'morisita', 'read.count','aa', .norm = T, .verbose = F)
+mo <- melt(overlap.m)
+colnames(mo)[1] <- "lable"
+mo <- mo %>% left_join(annote)
+
+# AE
+unique(mo$Var2)
+ae.mo <- mo %>% filter(Var2 == "LD" & lable != "M4" & lable != "LD2")
+ggplot(ae.mo %>% filter(source_n != "LD" & lable != "NB") ,
+       aes(x = Sum.reads,y = value,label = lable)) +
+       geom_point() + 
+       geom_text_repel() +
+       theme_classic() +
+       labs(y = "Morisita index", x = "") +
+       #scale_fill_npg()+
+       geom_smooth(method = 'lm') +
+       stat_cor(label.y = 0.04, method = 'spearman') +
+       theme(axis.title = element_text(size = 14, face = "bold"), 
+             axis.text = element_text(size = 14, face = "bold")) 
+#ggsave("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/supplement.morisita.librarysize.tiff",
+#       height = 4, width = 5.3, dpi = 300)
+```
+
+# FIG S5
+
+```{r, fig.width=20, fig.height=10}
+all.tcr.n.cli.n = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/data.analysis.csv')
+colnames(all.tcr.n.cli.n)[grep('lab',colnames(all.tcr.n.cli.n))] = 'Sample'
+annot = read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/annote.new.csv')
+all.tcr.n.cli.n = left_join(all.tcr.n.cli.n,annot)
+ttl.reads = inner_join(read.csv('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupTable1.csv'), annot)
+ttl.reads$total.clones = ttl.reads$n.clones.aa
+
+## summary statistics
+all.tcr.n.cli.n = all.tcr.n.cli.n %>% arrange(rn, -Read.count)
+
+ttl = all.tcr.n.cli.n %>% 
+      group_by(Sample) %>% 
+      summarise(n_total = n_distinct(CDR3.amino.acid.sequence))
+
+clonal = all.tcr.n.cli.n  %>% 
+         filter(Read.count > 1) %>% 
+         group_by(Sample) %>% 
+         summarise(n_clonal = n_distinct(CDR3.amino.acid.sequence))
+inner_join(ttl,clonal)
+
+## add rank
+sample.ls = split(all.tcr.n.cli.n, factor(all.tcr.n.cli.n$Sample))
+new.ls = lapply(sample.ls, function(dt){
+    
+    dt = dt %>% arrange(-Read.count)
+    dt$rank = 1:nrow(dt)
+    dt$category <- cut(dt$rank, c(1,5,10,20,30,40), include.lowest = T, right = T,
+                    labels = c("Top 5","Top 10","Top 20","Top 30","Top 40"))
+    
+    dt[,-which(colnames(dt) %in% c('top1','top5','top10'))]
+    
+})
+
+new = do.call(rbind, new.ls)
+
+tu <- new[new$Sample == "LD", c('CDR3.amino.acid.sequence','Read.count','productive')]
+
+topn.data <- new %>% filter(Sample !='LD') %>% left_join(tu, by = "CDR3.amino.acid.sequence")
+topn.data$shared[is.na(topn.data$Read.count.y)] <- "Notshared"
+topn.data$shared[!is.na(topn.data$Read.count.y)] <- "Shared"
+plotdata <- topn.data %>% 
+            group_by(source_n ,Name, Sample, category, shared) %>% 
+            summarise(n = n()) %>% 
+            spread(shared, n)
+plotdata = plotdata[,-which(colnames(plotdata) %in% c('Notshared'))] %>% 
+           arrange(Name, Sample, category)
+plotdata$n = ifelse(is.na(plotdata$Shared), 0, plotdata$Shared)
+
+plotdata$label = plotdata$Name
+plotdata$label[plotdata$label == "T_P"] = expression('T'['P']) %>% as.character
+plotdata$label[plotdata$label == "T_M1"] = expression('T'['M1']) %>% as.character
+plotdata$label[plotdata$label == "T_M2"] = expression('T'['M2']) %>% as.character
+plotdata$label[plotdata$label == "T_M3"] = expression('T'['M3']) %>% as.character
+
+# cumulative
+plotdata.cum <- plotdata %>%
+                group_by(Sample) %>%
+                mutate(cumsum = cumsum(n))
+
+plotdata.cum$Tissue <- ifelse(plotdata.cum$Sample %in% c('M1','M2','M3','PT'),'Tumor','Non-tumor')
+plotdata.cum$Group = ifelse(plotdata.cum$Sample %in% c('LN1','LN2','LN3'),'LN',
+                            ifelse(plotdata.cum$Sample %in% c('M1','M2','M3'),'Met',
+                                   ifelse(plotdata.cum$Sample %in%  c('NK','NSB'),'Normal',ifelse(plotdata.cum$Sample == 'PT','T_P','SK'))))
+
+## change the shape & avoid legend splitting
+f4 = ggplot(plotdata.cum %>% filter(Sample != "LD" &!is.na(category)),
+            aes(x = category, y = (cumsum), group = Name, color=Group, linetype = Tissue)) +
+            geom_point(alpha = 0.7)+
+    # geom_text_repel(aes(label = Name),
+    #                 fontface = "bold",
+    #                 #point.padding = 1,min.segment.length = 0,
+    #                 size = 5,
+    #                 parse = T) +
+             scale_linetype_manual(values = c(1, 2),
+                                   breaks = c('Tumor','Non-tumor')) +
+             scale_color_manual(values = c('#F8766D','#D89000','#9590FF','#00BF7D','#00B0F6'),
+                                breaks = c('Met','T_P','LN','Normal','SK')) +
+    # scale_shape_manual(values=c('1','2','3','1','2','3','K','SB','P','K'),
+    #                    breaks = c('LN1','LN2','LN3','T_M1','T_M2','T_M3','NK','NSB','T_P','SK')) + 
+             geom_line(lwd = 1, alpha = 0.7) +
+             theme_classic() +
+             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+             labs(x = "Top clones", y = "Number of shared clones with irLD") +
+             theme(axis.title = element_text(size = 25), #, face = "bold"
+                   axis.text = element_text(size = 25), #, face = "bold"
+                   legend.title = element_text(size = 10), 
+                   legend.text = element_text(size = 10))
+
+f5 = f4 +
+     geom_text_repel(aes(label = Name),
+                    fontface = "bold",
+                    #point.padding = 1,min.segment.length = 0,
+                    size = 5,
+                    parse = T)
+
+
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig4.tiff',
+       f4,
+       width = 9,
+       height = 8,
+       dpi = 300)
+ggsave('C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/SupFig4_annotate.tiff',
+       f5,
+       width = 9, 
+       height = 8,
+       dpi=300)
+
+f5
+```
+
+# FIG S6
+
+```{r}
+# load the metadata csv file
+metadata <- read.csv("meta_published_06042020.csv")
+
+# filter out the 'time' column of metadata for 'Pre -treatment', 'W*', 'M*', 'Y*'.
+# these are blood samples and we are focusing on the tissue samples.
+metadata <- metadata %>% filter(!grepl("Pre-treatment|W|M|Y", time))
+
+# read in the tcr data
+# after running the below command, a window will pop up. Just change
+# reads <- "count (reads)" in line 6 to reads <- "count (templates/reads)"
+trace("parse.immunoseq3", edit = TRUE)
+```
+
+*Patient MD01-004*
+
+```{r, setup, include=TRUE}
+# set working directory
+knitr::opts_knit$set(root.dir = 'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/IS_tissue/')
+```
+
+
+```{r}
+# Morisita Index
+md01_004_mi <- function(){
+  # dataset
+  md01_004 <- parse.folder("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/IS_tissue/", 'immunoseq3')
+  
+  # productive reads
+  md01_004_inframes_list <- get.inframes(md01_004)
+  
+  # filter the patient samples names as a list
+  md01_004_rows <- metadata %>% filter(imid == 'MD01-004')
+  md01_004_list <- md01_004_rows$sample_name
+  
+  # name the inframes list
+  names(md01_004_inframes_list) <- md01_004_list
+  
+  # morisita index
+  md01_004_mi <- repOverlap(md01_004_inframes_list, 'morisita', 'read.count', 'aa', 
+                               .norm = T, .verbose = F)
+  
+  # round morisita values to 2 digits
+  md01_004_mi <- round(md01_004_mi, 2)
+  
+  # convert the dataframe from wide to long format
+  md01_004_mi <- melt(md01_004_mi)
+}
+md01_004_mi <- md01_004_mi()
+
+# bar chart
+# rename column 'value' to 'Morisita_Value'
+# names(md01_004_mi)[1] <- "Morisita_Value"
+
+# Add column with tissue combination
+# Tissue_Combination <- paste("IS", ":", "Normal Fresh vs Post_Tumor_FFPE")
+# md01_004_mi <- cbind(Tissue_Combination, md01_004_mi)
+
+# add sample column
+# md01_004_mi$Sample <- "IS"
+```
+
+```{r, fig.width=20, fig.height=10}
+# visualize the Morisita Index as a Heatmap
+ggplot(data = md01_004_mi, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  # text within the bars
+  geom_text(aes(label = value), fontface = "bold", position = position_dodge(), 
+            size = 6) +
+  # select the theme
+  theme_classic() + theme_light() +
+  # make font 12 size
+  theme_bw(base_size = 12) +
+  # theme specifications
+  theme(axis.text.x = element_text(size = 20, vjust = 0.5, face = "bold"),
+        axis.title.x = element_text(size = 20, vjust = -9, face = "bold"),
+        axis.text.y = element_text(size = 20, face = 'bold'),
+        axis.title.y = element_text(size = 20, vjust = 9, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.margin = margin(c(0.5,0.5,0.8,1), unit = "in"),
+        plot.title = element_text(hjust = 0.5, size = 25, face = "bold")) +
+  scale_fill_continuous(limits=c(0.16, 0.59), breaks=seq(0.16, 0.59, by = 0.20),
+                        low = 'yellow', high = 'red', name = "Morisita Index Value") +
+  scale_x_discrete(labels = c("LN2 Fresh", "Normal Fresh", "Post Tumor FFPE")) +
+  scale_y_discrete(labels = c("LN2 Fresh", "Normal Fresh", "Post Tumor FFPE")) +
+  labs(title = "Patient MD01-004",
+       x = "Tissue Sample",
+       y = "Tissue Sample",
+       colour = "Morisita Index Value")
+```
+
+*Patient MD043-003*
+
+```{r, setup, include=TRUE}
+# set working directory
+knitr::opts_knit$set(root.dir = 'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/MD043-003_tissue/')
+```
+
+```{r}
+# Morisita Index
+md043_003_mi <- function(){
+  
+  # dataset
+  md043_003 <- parse.folder("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/MD043-003_tissue/", 'immunoseq3')
+  
+  # productive reads
+  md043_003_inframes_list <- get.inframes(md043_003)
+  
+  # filter the patient samples names as a list
+  md043_003_rows <- metadata %>% filter(imid == 'MD043-003')
+  md043_003_list <- md043_003_rows$sample_name
+  
+  # name the inframes list
+  names(md043_003_inframes_list) <- md043_003_list
+  
+  # morisita index
+  md043_003_mi <- repOverlap(md043_003_inframes_list, 'morisita', 'read.count', 'aa', 
+                               .norm = T, .verbose = F)
+  
+  # round morisita values to 2 digits
+  md043_003_mi <- round(md043_003_mi, 2)
+  
+  # convert the dataframe from wide to long format
+  md043_003_mi <- melt(md043_003_mi)
+}
+md043_003_mi <- md043_003_mi()
+
+# bar graph
+# rename column 'value' to 'Morisita_Value'
+# names(md043_003_mi)[1] <- "Morisita_Value"
+
+# Add column with tissue combination
+# Tissue_Combination <- paste("MD043_003", ":", "Normal Fresh vs Post Tumor FFPE")
+# md043_003_mi <- cbind(Tissue_Combination, md043_003_mi)
+
+# add sample column
+# md043_003_mi$Sample <- "MD043_003"
+
+```
+
+```{r, fig.width=20, fig.height=10}
+# visualize the Morisita Index as a Heatmap
+ggplot(data = md043_003_mi, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  # text within the bars
+  geom_text(aes(label = value), fontface = "bold", position = position_dodge(), 
+            size = 6) +
+  # select the theme
+  theme_classic() + theme_light() +
+  # make font 12 size
+  theme_bw(base_size = 12) +
+  # theme specifications
+  theme(axis.text.x = element_text(size = 20, vjust = 0.5, face = "bold"),
+        axis.title.x = element_text(size = 20, vjust = -9, face = "bold"),
+        axis.text.y = element_text(size = 20, face = 'bold'),
+        axis.title.y = element_text(size = 20, vjust = 9, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.margin = margin(c(0.5,0.5,0.8,1), unit = "in"),
+        plot.title = element_text(hjust = 0.5, size = 25, face = "bold")) +
+  scale_fill_continuous(limits=c(0.195, 0.94), breaks=seq(0.195, 0.94, by = 0.20),
+                        low = 'yellow', high = 'red', name = "Morisita Index Value") +
+  scale_x_discrete(labels = c("R11 LN Fresh", "S7 LN Fresh", "Normal Fresh", "Post Tumor FFPE")) +
+  scale_y_discrete(labels = c("R11 LN Fresh", "S7 LN Fresh", "Normal Fresh", "Post Tumor FFPE")) +
+  labs(title = "Patient MD043-003",
+       x = "Tissue Sample",
+       y = "Tissue Sample")
+```
+
+*Patient MD01-005*
+
+```{r, setup, include=TRUE}
+# set working directory
+knitr::opts_knit$set(root.dir = 'C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/MD01-005_tissue/')
+```
+
+```{r}
+# Morisita Index
+md01_005_mi <- function(){
+  
+  # dataset
+  md01_005 <- parse.folder("C:/Users/pburman2/Desktop/analysis/Kellie/Dermatitis/data/MD01-005_tissue/", 'immunoseq3')
+  
+  # productive reads
+  md01_005_inframes_list <- get.inframes(md01_005)
+  
+  # filter the patient samples names as a list
+  md01_005_rows <- metadata %>% filter(imid == 'MD01-005')
+  md01_005_list <- md01_005_rows$sample_name
+  
+  # name the inframes list
+  names(md01_005_inframes_list) <- md01_005_list
+  
+  # morisita index
+  md01_005_mi <- repOverlap(md01_005_inframes_list, 'morisita', 'read.count', 'aa', 
+                               .norm = T, .verbose = F)
+  
+  # round morisita values to 2 digits
+  md01_005_mi <- round(md01_005_mi, 2)
+  
+  # convert the dataframe from wide to long format
+  md01_005_mi <- melt(md01_005_mi)
+}
+md01_005_mi <- md01_005_mi()
+
+# bar graph
+# rename column 'value' to 'Morisita_Value'
+# names(md01_005_mi)[3] <- "Morisita_Value"
+
+# Add column with tissue combination
+# md01_005_mi <- md01_005_mi %>% unite("Tissue_Combination", Var1:Var2, sep = " vs ")
+
+# add sample column
+# md01_005_mi$Sample <- c("MD01_005", "MD01_005", "MD01_005", "MD01_005", "MD01_005",
+#                        "MD01_005", "MD01_005", "MD01_005", "MD01_005", "MD01_005",
+#                        "MD01_005", "MD01_005", "MD01_005", "MD01_005", "MD01_005",
+#                        "MD01_005", "MD01_005", "MD01_005", "MD01_005", "MD01_005",
+#                        "MD01_005", "MD01_005", "MD01_005", "MD01_005", "MD01_005")
+```
+
+```{r, fig.width=20, fig.height=10}
+# visualize the Morisita Index as a Heatmap
+ggplot(data = md01_005_mi, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = value), fontface = "bold", position = position_dodge(), size = 4) +
+  # select the theme
+  theme_classic() + theme_light() +
+  # make font 12 size
+  theme_bw(base_size = 12) +
+  # theme specifications
+  theme(axis.text.x = element_text(size = 18, vjust = 0.5, face = "bold"),
+        axis.title.x = element_text(size = 20, vjust = -9, face = "bold"),
+        axis.text.y = element_text(size = 18, face = 'bold'),
+        axis.title.y = element_text(size = 20, vjust = 9, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.margin = margin(c(0.5,0.5,0.8,1), unit = "in"),
+        plot.title = element_text(hjust = 0.5, size = 25, face = "bold")) +
+  scale_fill_continuous(limits=c(0.065, 0.78), breaks=seq(0.065, 0.78, by = 0.25),
+                        low = 'yellow', high = 'red', name = "Morisita Index Value") +
+  scale_x_discrete(labels = c("Normal Fresh", "Post Tumor FFPE 1", "Post Tumor FFPE 2", "Pre Tumor", "S7 LN Fresh")) +
+  scale_y_discrete(labels = c("Normal Fresh", "Post Tumor FFPE 1", "Post Tumor FFPE 2", "Pre Tumor", "S7 LN Fresh")) +
+  labs(title = "Patient MD01-005",
+       x = "Tissue Sample",
+       y = "Tissue Sample")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
