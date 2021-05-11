@@ -1,0 +1,12 @@
+rn,Sample,Groups,Name,Tissue,Disease_state
+1,LN1,LN met,LN1,Lymph node,Other
+2,M1,Organ met,T_M1,Brain,Tumor
+3,SK,Skin inflammation,SK,Skin,Other
+4,LN2,LN met,LN2,Lymph node,Other
+5,M2,Organ met,T_M2,Small bowel,Tumor
+6,M3,Organ met,T_M3,Mesentery,Tumor
+7,LN3,Regional LN,LN3,Lymph node,Other
+8,NK,Normal organ,NK,Kidney,Normal
+9,PT,Primary tumor,T_P,Kidney,Tumor
+10,LD,Skin irAE 1,irLD,Skin,Other
+11,NSB,Normal organ,NSB,Small bowel,Normal
